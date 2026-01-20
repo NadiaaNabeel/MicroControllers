@@ -130,7 +130,7 @@ int main(void)
   while (1)
   {
     /* USER CODE END WHILE */
-    
+  // Task 1
   int x = 42;
   float y = 3.14;
   myPrintf ("Value of x = %d, y = %.2f\r\n", x, y);
