@@ -133,13 +133,13 @@ int main(void)
   while (1)
 {       
 
-// Task 3: 2x2 matrix multiplication
+// Task 4
 int A[2][2] = { {1, 2}, {3, 4} };
 int B[2][2] = { {5, 6}, {7, 8} };
 int C[2][2];  // Result matrix
 int i, j, k;
 
-// Initialize C to 0
+
 for (i = 0; i < 2; i++)
 {
     for (j = 0; j < 2; j++)
@@ -148,7 +148,7 @@ for (i = 0; i < 2; i++)
     }
 }
 
-// Multiply A and B -> C
+// Multiply A and B = C
 for (i = 0; i < 2; i++)
 {
     for (j = 0; j < 2; j++)
