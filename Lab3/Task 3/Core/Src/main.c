@@ -30,7 +30,7 @@
 #define SEG_G GPIO_PIN_7
 #define SEG_PORT GPIOA  // Replace with the correct port
 
-// Hex digit to segment map (common cathode)
+// Hex digit to segment map (common anode)
 const uint8_t segmentMap[16] = {
     0b00111111, // 0
     0b00000110, // 1
