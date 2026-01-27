@@ -20,7 +20,7 @@
 #include "main.h"
 #include "usb_device.h"
 
-// GPIO pins connected to segments (adjust to your CubeMX pinout)
+// Task 1
 #define SEG_A GPIO_PIN_1
 #define SEG_B GPIO_PIN_2
 #define SEG_C GPIO_PIN_3
@@ -28,7 +28,6 @@
 #define SEG_E GPIO_PIN_5
 #define SEG_F GPIO_PIN_6
 #define SEG_G GPIO_PIN_7
-#define SEG_PORT GPIOA  // Replace with the correct port
 
 // Hex digit to segment map (common cathode)
 const uint8_t segmentMap[16] = {
@@ -145,6 +144,7 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+    // Task 1
     for(uint8_t i = 0; i < 16; i++) {
         display_number(i);    // call your function to show digit
         HAL_Delay(2000);      // 2-second delay
