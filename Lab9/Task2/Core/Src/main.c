@@ -23,16 +23,38 @@
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
 #include <stdint.h>
+#include <string.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
+typedef struct {
+  int16_t raw_x;
+  int16_t raw_y;
+  int16_t raw_z;
+  float scaled_x;
+  float scaled_y;
+  float scaled_z;
+  float offset_x;
+  float offset_y;
+  float offset_z;
+  int16_t gyro_raw_x;
+  int16_t gyro_raw_y;
+  int16_t gyro_raw_z;
+  float   gyro_scaled_x;
+  float   gyro_scaled_y;
+  float   gyro_scaled_z;
+} LSM_Data;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 #define LSM_ADDR (0x19 << 1)
+#define GYRO_CS_PORT GPIOE
+#define GYRO_CS_PIN  GPIO_PIN_3
+
+#define GYRO_CTRL_REG1 0x20
+#define GYRO_OUT_X_L   0x28
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -50,7 +72,7 @@ UART_HandleTypeDef huart1;
 PCD_HandleTypeDef hpcd_USB_FS;
 
 /* USER CODE BEGIN PV */
-
+LSM_Data acc_data;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -62,12 +84,42 @@ static void MX_USART1_UART_Init(void);
 static void MX_USB_PCD_Init(void);
 /* USER CODE BEGIN PFP */
 void LSM_Init(void);
-void LSM_ReadAccel(float *ax, float *ay, float *az);
+void GYRO_Init(void);
+void GYRO_Read(LSM_Data *data);
+void LSM_Read(LSM_Data *data);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+void LSM_Offset_Calibration(LSM_Data *data) {
+float sum_x = 0.0f, sum_y = 0.0f, sum_z = 0.0f;
+uint8_t low_byte, high_byte;
+int16_t raw_x, raw_y, raw_z;
 
+for (int i = 0; i < 20; i++) {
+HAL_I2C_Mem_Read(&hi2c1, LSM_ADDR, 0x28, 1, &low_byte, 1, HAL_MAX_DELAY);
+HAL_I2C_Mem_Read(&hi2c1, LSM_ADDR, 0x29, 1, &high_byte, 1, HAL_MAX_DELAY);
+raw_x = (int16_t)((high_byte << 8) | low_byte);
+
+HAL_I2C_Mem_Read(&hi2c1, LSM_ADDR, 0x2A, 1, &low_byte, 1, HAL_MAX_DELAY);
+HAL_I2C_Mem_Read(&hi2c1, LSM_ADDR, 0x2B, 1, &high_byte, 1, HAL_MAX_DELAY);
+raw_y = (int16_t)((high_byte << 8) | low_byte);
+
+HAL_I2C_Mem_Read(&hi2c1, LSM_ADDR, 0x2C, 1, &low_byte, 1, HAL_MAX_DELAY);
+HAL_I2C_Mem_Read(&hi2c1, LSM_ADDR, 0x2D, 1, &high_byte, 1, HAL_MAX_DELAY);
+raw_z = (int16_t)((high_byte << 8) | low_byte);
+
+sum_x += (raw_x * 3.9f / 1000.0f);
+sum_y += (raw_y * 3.9f / 1000.0f);
+sum_z += (raw_z * 3.9f / 1000.0f);
+
+HAL_Delay(20);
+}
+
+data->offset_x = sum_x / 20.0f;
+data->offset_y = sum_y / 20.0f;
+data->offset_z = (sum_z / 20.0f) - 1.0f;
+}
 /* USER CODE END 0 */
 
 /**
@@ -79,7 +131,7 @@ int main(void)
 
   /* USER CODE BEGIN 1 */
 
-  /* USER CODE END 1 */ 
+  /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
 
@@ -104,6 +156,8 @@ int main(void)
   MX_USART1_UART_Init();
   MX_USB_PCD_Init();
   /* USER CODE BEGIN 2 */
+  memset(&acc_data, 0, sizeof(LSM_Data));
+
   uint8_t who_am_i;
     HAL_I2C_Mem_Read(&hi2c1,
                  LSM_ADDR,
@@ -115,22 +169,28 @@ int main(void)
 
     printf("WHO_AM_I = 0x%X\r\n", who_am_i);
   
+  
   LSM_Init();
-  float ax, ay, az;
+  GYRO_Init();
+  LSM_Offset_Calibration(&acc_data);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
-  {
+  { LSM_Read(&acc_data);
+    GYRO_Read(&acc_data);     // SPI gyro
+
+    printf("ACC: %.2f %.2f %.2f | GYRO: %.2f %.2f %.2f\r\n",
+           acc_data.scaled_x,
+           acc_data.scaled_y,
+           acc_data.scaled_z,
+           acc_data.gyro_scaled_x,
+           acc_data.gyro_scaled_y,
+           acc_data.gyro_scaled_z);
+  // HAL_Delay(100);
     /* USER CODE END WHILE */
-    
 
-  LSM_ReadAccel(&ax, &ay, &az);
-
-  printf("X: %.2f  Y: %.2f  Z: %.2f\r\n", ax, ay, az);
-
-  HAL_Delay(200);
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
@@ -253,17 +313,17 @@ static void MX_SPI1_Init(void)
   hspi1.Instance = SPI1;
   hspi1.Init.Mode = SPI_MODE_MASTER;
   hspi1.Init.Direction = SPI_DIRECTION_2LINES;
-  hspi1.Init.DataSize = SPI_DATASIZE_4BIT;
-  hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
-  hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
+  hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
+  hspi1.Init.CLKPolarity = SPI_POLARITY_HIGH;
+  hspi1.Init.CLKPhase = SPI_PHASE_2EDGE;
   hspi1.Init.NSS = SPI_NSS_SOFT;
-  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_4;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_8;
   hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
   hspi1.Init.CRCPolynomial = 7;
   hspi1.Init.CRCLength = SPI_CRC_LENGTH_DATASIZE;
-  hspi1.Init.NSSPMode = SPI_NSS_PULSE_ENABLE;
+  hspi1.Init.NSSPMode = SPI_NSS_PULSE_DISABLE;
   if (HAL_SPI_Init(&hspi1) != HAL_OK)
   {
     Error_Handler();
@@ -330,6 +390,7 @@ static void MX_USB_PCD_Init(void)
   hpcd_USB_FS.Init.phy_itface = PCD_PHY_EMBEDDED;
   hpcd_USB_FS.Init.low_power_enable = DISABLE;
   hpcd_USB_FS.Init.battery_charging_enable = DISABLE;
+  
   if (HAL_PCD_Init(&hpcd_USB_FS) != HAL_OK)
   {
     Error_Handler();
@@ -420,10 +481,21 @@ void LSM_Init(void)
                       HAL_MAX_DELAY);
 }
 
-void LSM_ReadAccel(float *ax, float *ay, float *az)
+void GYRO_Init(void)
+{
+    uint8_t data[2];
+
+    data[0] = GYRO_CTRL_REG1;
+    data[1] = 0x0F;   // Power on, enable X Y Z, 95Hz
+
+    HAL_GPIO_WritePin(GYRO_CS_PORT, GYRO_CS_PIN, GPIO_PIN_RESET);
+    HAL_SPI_Transmit(&hspi1, data, 2, HAL_MAX_DELAY);
+    HAL_GPIO_WritePin(GYRO_CS_PORT, GYRO_CS_PIN, GPIO_PIN_SET);
+}
+
+void LSM_Read(LSM_Data *data)
 {
     uint8_t rawData[6];
-    int16_t ax_raw, ay_raw, az_raw;
 
     HAL_I2C_Mem_Read(&hi2c1,
                      LSM_ADDR,
@@ -433,13 +505,37 @@ void LSM_ReadAccel(float *ax, float *ay, float *az)
                      6,
                      HAL_MAX_DELAY);
 
-    ax_raw = (int16_t)(rawData[1] << 8 | rawData[0]);
-    ay_raw = (int16_t)(rawData[3] << 8 | rawData[2]);
-    az_raw = (int16_t)(rawData[5] << 8 | rawData[4]);
+    data->raw_x = (int16_t)((rawData[1] << 8) | rawData[0]);
+    data->raw_y = (int16_t)((rawData[3] << 8) | rawData[2]);
+    data->raw_z = (int16_t)((rawData[5] << 8) | rawData[4]);
 
-    *ax = ax_raw / 16384.0;
-    *ay = ay_raw / 16384.0;
-    *az = az_raw / 16384.0;
+    data->scaled_x = (data->raw_x * 3.9f / 1000.0f) - data->offset_x;
+    data->scaled_y = (data->raw_y * 3.9f / 1000.0f) - data->offset_y;
+    data->scaled_z = (data->raw_z * 3.9f / 1000.0f) - data->offset_z;
+    LSM_Offset_Calibration(&acc_data);
+}
+
+void GYRO_Read(LSM_Data *data)
+{
+    uint8_t tx_buf[7] = {0};
+    uint8_t rx_buf[7] = {0};
+
+    tx_buf[0] = 0xC0 | GYRO_OUT_X_L;  
+    // 0x80 = Read
+    // 0x40 = Auto increment
+
+    HAL_GPIO_WritePin(GYRO_CS_PORT, GYRO_CS_PIN, GPIO_PIN_RESET);
+    HAL_SPI_TransmitReceive(&hspi1, tx_buf, rx_buf, 7, HAL_MAX_DELAY);
+    HAL_GPIO_WritePin(GYRO_CS_PORT, GYRO_CS_PIN, GPIO_PIN_SET);
+
+    data->gyro_raw_x = (int16_t)((rx_buf[2] << 8) | rx_buf[1]);
+    data->gyro_raw_y = (int16_t)((rx_buf[4] << 8) | rx_buf[3]);
+    data->gyro_raw_z = (int16_t)((rx_buf[6] << 8) | rx_buf[5]);
+
+    // L3GD20 ±250 dps sensitivity
+    data->gyro_scaled_x = data->gyro_raw_x * 0.00875f;
+    data->gyro_scaled_y = data->gyro_raw_y * 0.00875f;
+    data->gyro_scaled_z = data->gyro_raw_z * 0.00875f;
 }
 
 int _write(int file, char *ptr, int len)
