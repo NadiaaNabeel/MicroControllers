@@ -18,6 +18,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "usb_device.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -33,12 +34,10 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define SAMPLE_SIZE 10
+#define SAMPLE_SIZE 5
+#define PPR 11
 
-uint32_t capture[SAMPLE_SIZE];
-uint8_t idx = 0;
-uint8_t first_edge = 0;
-uint8_t print_flag = 0;
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -56,10 +55,7 @@ TIM_HandleTypeDef htim3;
 
 UART_HandleTypeDef huart1;
 
-PCD_HandleTypeDef hpcd_USB_FS;
-
 /* USER CODE BEGIN PV */
-float frequency = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -68,7 +64,6 @@ static void MX_GPIO_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_TIM2_Init(void);
-static void MX_USB_PCD_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_USART1_UART_Init(void);
 /* USER CODE BEGIN PFP */
@@ -97,8 +92,7 @@ int main(void)
 
   /* MCU Configuration--------------------------------------------------------*/
 
-  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-  HAL_Init();
+  /* Reset of all peripherals, Initializes the Flash interface and the Systi  HAL_Init();
 
   /* USER CODE BEGIN Init */
 
@@ -116,52 +110,62 @@ int main(void)
   MX_I2C1_Init();
   MX_SPI1_Init();
   MX_TIM2_Init();
-  MX_USB_PCD_Init();
   MX_TIM3_Init();
   MX_USART1_UART_Init();
+  MX_USB_DEVICE_Init();
   /* USER CODE BEGIN 2 */
+  char buffer[20];
+  sprintf(buffer, "hello");
+  HAL_UART_Transmit(&huart1, (uint8_t*)buffer, strlen(buffer), 100);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2);
-__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 500);  
-__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 500);
+  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 999);  
+  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 999);
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);
+  printf("%d\r\n", HAL_GPIO_ReadPin(GPIOD, GPIO_PIN_0));
+    HAL_Delay(100);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 
 while (1)
-{   
-  while (HAL_GPIO_ReadPin(GPIOD, GPIO_PIN_0) == GPIO_PIN_RESET);
-  while (HAL_GPIO_ReadPin(GPIOD, GPIO_PIN_0) == GPIO_PIN_SET);
+{
+    printf("%d\r\n", HAL_GPIO_ReadPin(GPIOD, GPIO_PIN_0));
+    HAL_Delay(100);
+    // float sum = 0;
 
-  __HAL_TIM_SET_COUNTER(&htim2, 0);
-  HAL_TIM_Base_Start(&htim2);
-  
-  while (HAL_GPIO_ReadPin(GPIOD, GPIO_PIN_0) == GPIO_PIN_RESET);
-  while (HAL_GPIO_ReadPin(GPIOD, GPIO_PIN_0) == GPIO_PIN_SET);
-  
-  HAL_TIM_Base_Stop(&htim2);
-  uint32_t ticks = __HAL_TIM_GET_COUNTER(&htim2);
-  // Frequency calculation
-  
-      //uint32_t sum = 0;
+    // for (int i = 0; i < SAMPLE_SIZE; i++)
+    // {
+    //     // wait for falling edge
+    //     while(HAL_GPIO_ReadPin(GPIOD, GPIO_PIN_0) == GPIO_PIN_SET);
+    //     while(HAL_GPIO_ReadPin(GPIOD, GPIO_PIN_0) == GPIO_PIN_RESET);
 
-      //for (int i = 0; i < ticks; i++)
-      //{
-         // sum += capture[i];
-      //}
+    //     __HAL_TIM_SET_COUNTER(&htim2, 0);
+    //     HAL_TIM_Base_Start(&htim2);
 
-      //uint32_t avg = sum / ticks;
+    //     // next falling edge
+    //     while(HAL_GPIO_ReadPin(GPIOD, GPIO_PIN_0) == GPIO_PIN_SET);
+    //     while(HAL_GPIO_ReadPin(GPIOD, GPIO_PIN_0) == GPIO_PIN_RESET);
 
-      if (ticks != 0)
-      {
-          float freq = 4800000.0f / ticks;
-          printf("Frequency: %.2f Hz\r\n", freq);
-      }
-      else
-      {
-          printf("Frequency: Inf Hz\r\n");
-      }
+    //     HAL_TIM_Base_Stop(&htim2);
+
+    //     uint32_t ticks = __HAL_TIM_GET_COUNTER(&htim2);
+
+    //     if (ticks != 0)
+    //     {
+    //         float freq = 4800000.0f / ticks;   // because prescaler = 9
+    //         sum += freq;
+    //     }
+    // }
+
+    // float avg_freq = sum / SAMPLE_SIZE;
+    // float rpm = (60.0f * avg_freq) / PPR;
+
+    // printf("Freq: %.2f Hz | RPM: %.2f\r\n", avg_freq, rpm);
+
+    // HAL_Delay(100);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -431,7 +435,7 @@ static void MX_USART1_UART_Init(void)
 
   /* USER CODE END USART1_Init 1 */
   huart1.Instance = USART1;
-  huart1.Init.BaudRate = 38400;
+  huart1.Init.BaudRate = 115200;
   huart1.Init.WordLength = UART_WORDLENGTH_8B;
   huart1.Init.StopBits = UART_STOPBITS_1;
   huart1.Init.Parity = UART_PARITY_NONE;
@@ -447,37 +451,6 @@ static void MX_USART1_UART_Init(void)
   /* USER CODE BEGIN USART1_Init 2 */
 
   /* USER CODE END USART1_Init 2 */
-
-}
-
-/**
-  * @brief USB Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_USB_PCD_Init(void)
-{
-
-  /* USER CODE BEGIN USB_Init 0 */
-
-  /* USER CODE END USB_Init 0 */
-
-  /* USER CODE BEGIN USB_Init 1 */
-
-  /* USER CODE END USB_Init 1 */
-  hpcd_USB_FS.Instance = USB;
-  hpcd_USB_FS.Init.dev_endpoints = 8;
-  hpcd_USB_FS.Init.speed = PCD_SPEED_FULL;
-  hpcd_USB_FS.Init.phy_itface = PCD_PHY_EMBEDDED;
-  hpcd_USB_FS.Init.low_power_enable = DISABLE;
-  hpcd_USB_FS.Init.battery_charging_enable = DISABLE;
-  if (HAL_PCD_Init(&hpcd_USB_FS) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN USB_Init 2 */
-
-  /* USER CODE END USB_Init 2 */
 
 }
 
@@ -546,13 +519,13 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
 
-  // /*Configure GPIO pin : PA15 */
-  // GPIO_InitStruct.Pin = GPIO_PIN_15;
-  // GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-  // GPIO_InitStruct.Pull = GPIO_NOPULL;
-  // GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  // GPIO_InitStruct.Alternate = GPIO_AF2_TIM8;
-  // HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+  /*Configure GPIO pin : PA15 */
+  GPIO_InitStruct.Pin = GPIO_PIN_15;
+  GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  GPIO_InitStruct.Alternate = GPIO_AF2_TIM8;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /*Configure GPIO pin : PD0 */
   GPIO_InitStruct.Pin = GPIO_PIN_0;
