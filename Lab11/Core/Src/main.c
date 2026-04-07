@@ -18,6 +18,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "stm32f3xx_hal_gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -35,6 +36,7 @@ typedef struct {
   float offset_x; float offset_y; float offset_z;
   int16_t gyro_raw_x; int16_t gyro_raw_y; int16_t gyro_raw_z;
   float gyro_scaled_x; float gyro_scaled_y; float gyro_scaled_z;
+  float gyro_offset_x; float gyro_offset_y; float gyro_offset_z;
 } LSM_Data;
 /* USER CODE END PTD */
 
@@ -99,38 +101,32 @@ void GYRO_Init(void);
 void GYRO_Read(LSM_Data *data);
 void LSM_Read(LSM_Data *data);
 void LSM_Offset_Calibration(LSM_Data *data);
+void GYRO_Offset_Calibration(LSM_Data *data);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 void LSM_Offset_Calibration(LSM_Data *data) {
-float sum_x = 0.0f, sum_y = 0.0f, sum_z = 0.0f;
-uint8_t low_byte, high_byte;
-int16_t raw_x, raw_y, raw_z;
+    float sum_x = 0.0f, sum_y = 0.0f, sum_z = 0.0f;
 
-for (int i = 0; i < 20; i++) {
-HAL_I2C_Mem_Read(&hi2c1, LSM_ADDR, 0x28, 1, &low_byte, 1, HAL_MAX_DELAY);
-HAL_I2C_Mem_Read(&hi2c1, LSM_ADDR, 0x29, 1, &high_byte, 1, HAL_MAX_DELAY);
-raw_x = (int16_t)((high_byte << 8) | low_byte);
+    // 1. Wipe out any old garbage offsets first
+    data->offset_x = 0.0f;
+    data->offset_y = 0.0f;
+    data->offset_z = 0.0f;
 
-HAL_I2C_Mem_Read(&hi2c1, LSM_ADDR, 0x2A, 1, &low_byte, 1, HAL_MAX_DELAY);
-HAL_I2C_Mem_Read(&hi2c1, LSM_ADDR, 0x2B, 1, &high_byte, 1, HAL_MAX_DELAY);
-raw_y = (int16_t)((high_byte << 8) | low_byte);
+    // 2. Take 50 clean readings using your proper read function
+    for (int i = 0; i < 50; i++) {
+        LSM_Read(data);
+        sum_x += data->scaled_x;
+        sum_y += data->scaled_y;
+        sum_z += data->scaled_z;
+        HAL_Delay(10);
+    }
 
-HAL_I2C_Mem_Read(&hi2c1, LSM_ADDR, 0x2C, 1, &low_byte, 1, HAL_MAX_DELAY);
-HAL_I2C_Mem_Read(&hi2c1, LSM_ADDR, 0x2D, 1, &high_byte, 1, HAL_MAX_DELAY);
-raw_z = (int16_t)((high_byte << 8) | low_byte);
-
-sum_x += (raw_x * 3.9f / 1000.0f);
-sum_y += (raw_y * 3.9f / 1000.0f);
-sum_z += (raw_z * 3.9f / 1000.0f);
-
-HAL_Delay(20);
-}
-
-data->offset_x = sum_x / 20.0f;
-data->offset_y = sum_y / 20.0f;
-data->offset_z = (sum_z / 20.0f) - 1.0f;
+    // 3. Save the true averages
+    data->offset_x = sum_x / 50.0f;
+    data->offset_y = sum_y / 50.0f;
+    data->offset_z = (sum_z / 50.0f) - 1.0f; // Subtract 1G for gravity
 }
 
 /* USER CODE END 0 */
@@ -173,9 +169,11 @@ int main(void)
   // ... (keep your existing init code here)
   LSM_Init();
   GYRO_Init();
+  HAL_Delay(200);
   LSM_Offset_Calibration(&acc_data);
+  GYRO_Offset_Calibration(&acc_data);
   
-  HAL_TIM_Base_Start_IT(&htim4); // START THE TIMER INTERRUPT! [cite: 268]
+  HAL_TIM_Base_Start_IT(&htim4); // START THE TIMER INTERRUPT! [cits: 268]
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -186,13 +184,16 @@ int main(void)
       {
           display_flag = 0; 
           
-          // Printing the raw gyro rate, accelerometer angle, filtered angle, and PID output
-          printf("AX: %.2f | AY: %.2f | AZ: %.2f || GyroX: %.2f | Angle: %.2f\r\n", 
-                 acc_data.scaled_x, 
-                 acc_data.scaled_y, 
-                 acc_data.scaled_z, 
-                 acc_data.gyro_scaled_x,
-                 tilt_angle);
+          // Printing all raw gyro rates, accelerometer data, and filtered angle
+          // printf("AX: %.2f | AY: %.2f | AZ: %.2f || GX: %.2f | GY: %.2f | GZ: %.2f || Angle: %.2f\r\n", 
+          //        acc_data.scaled_x, 
+          //        acc_data.scaled_y, 
+          //        acc_data.scaled_z, 
+          //        acc_data.gyro_scaled_x,
+          //        acc_data.gyro_scaled_y,
+          //        acc_data.gyro_scaled_z,
+          //        tilt_angle);
+          printf("%.2f,%.2f,%.2f\r\n", acc_data.scaled_y, acc_data.gyro_scaled_y, tilt_angle);
       }
     /* USER CODE END WHILE */
 
@@ -358,7 +359,7 @@ static void MX_TIM4_Init(void)
 
   /* USER CODE END TIM4_Init 1 */
   htim4.Instance = TIM4;
-  htim4.Init.Prescaler = 7199;
+  htim4.Init.Prescaler = 4799;
   htim4.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim4.Init.Period = 49;
   htim4.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
@@ -474,6 +475,9 @@ static void MX_GPIO_Init(void)
                           |LD7_Pin|LD9_Pin|LD10_Pin|LD8_Pin
                           |LD6_Pin, GPIO_PIN_RESET);
 
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2, GPIO_PIN_RESET);
+
   /*Configure GPIO pins : DRDY_Pin MEMS_INT3_Pin MEMS_INT4_Pin MEMS_INT1_Pin
                            MEMS_INT2_Pin */
   GPIO_InitStruct.Pin = DRDY_Pin|MEMS_INT3_Pin|MEMS_INT4_Pin|MEMS_INT1_Pin
@@ -499,6 +503,13 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
 
+  /*Configure GPIO pin : PA2 */
+  GPIO_InitStruct.Pin = GPIO_PIN_2;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
   /* USER CODE END MX_GPIO_Init_2 */
@@ -509,25 +520,13 @@ void LSM_Init(void)
 {
     uint8_t data;
 
-    // CTRL_REG1_A → 100Hz, enable X Y Z
-    data = 0x57;
-    HAL_I2C_Mem_Write(&hi2c1,
-                      LSM_ADDR,
-                      0x20,
-                      I2C_MEMADD_SIZE_8BIT,
-                      &data,
-                      1,
-                      HAL_MAX_DELAY);
+    // CTRL_REG1_A → 0x67 speeds the sensor up to 200Hz to match your STM32!
+    data = 0x67; 
+    HAL_I2C_Mem_Write(&hi2c1, LSM_ADDR, 0x20, I2C_MEMADD_SIZE_8BIT, &data, 1, HAL_MAX_DELAY);
 
-    // CTRL_REG4_A → ±2g
-    data = 0x00;
-    HAL_I2C_Mem_Write(&hi2c1,
-                      LSM_ADDR,
-                      0x23,
-                      I2C_MEMADD_SIZE_8BIT,
-                      &data,
-                      1,
-                      HAL_MAX_DELAY);
+    // CTRL_REG4_A → 0x88 turns ON the BDU Shield and High-Resolution mode!
+    data = 0x88; 
+    HAL_I2C_Mem_Write(&hi2c1, LSM_ADDR, 0x23, I2C_MEMADD_SIZE_8BIT, &data, 1, HAL_MAX_DELAY);
 }
 
 void GYRO_Init(void)
@@ -542,25 +541,36 @@ void GYRO_Init(void)
     HAL_GPIO_WritePin(GYRO_CS_PORT, GYRO_CS_PIN, GPIO_PIN_SET);
 }
 
+void GYRO_Offset_Calibration(LSM_Data *data) {
+    float sum_x = 0.0f, sum_y = 0.0f, sum_z = 0.0f;
+    for (int i = 0; i < 50; i++) {
+        GYRO_Read(data); // Read the raw gyro
+        sum_x += data->gyro_scaled_x;
+        sum_y += data->gyro_scaled_y;
+        sum_z += data->gyro_scaled_z;
+        HAL_Delay(10);
+    }
+    // Save the average "fake speed"
+    data->gyro_offset_x = sum_x / 50.0f;
+    data->gyro_offset_y = sum_y / 50.0f;
+    data->gyro_offset_z = sum_z / 50.0f;
+}
+
 void LSM_Read(LSM_Data *data)
 {
     uint8_t rawData[6];
 
-    HAL_I2C_Mem_Read(&hi2c1,
-                     LSM_ADDR,
-                     0x28 | 0x80,
-                     I2C_MEMADD_SIZE_8BIT,
-                     rawData,
-                     6,
-                     HAL_MAX_DELAY);
+    HAL_I2C_Mem_Read(&hi2c1, LSM_ADDR, 0x28 | 0x80, I2C_MEMADD_SIZE_8BIT, rawData, 6, HAL_MAX_DELAY);
 
-    data->raw_x = (int16_t)((rawData[1] << 8) | rawData[0]);
-    data->raw_y = (int16_t)((rawData[3] << 8) | rawData[2]);
-    data->raw_z = (int16_t)((rawData[5] << 8) | rawData[4]);
+    // YOU MUST SHIFT RIGHT BY 4 ( >> 4 ) TO DELETE THE EMPTY BITS!
+    data->raw_x = ((int16_t)((rawData[1] << 8) | rawData[0])) >> 4;
+    data->raw_y = ((int16_t)((rawData[3] << 8) | rawData[2])) >> 4;
+    data->raw_z = ((int16_t)((rawData[5] << 8) | rawData[4])) >> 4;
 
-    data->scaled_x = (data->raw_x * 3.9f / 1000.0f) - data->offset_x;
-    data->scaled_y = (data->raw_y * 3.9f / 1000.0f) - data->offset_y;
-    data->scaled_z = (data->raw_z * 3.9f / 1000.0f) - data->offset_z;
+    // Because we turned on High Res mode, the multiplier is exactly 1.0f, NOT 3.9f!
+    data->scaled_x = (data->raw_x * 1.0f / 1000.0f) - data->offset_x;
+    data->scaled_y = (data->raw_y * 1.0f / 1000.0f) - data->offset_y;
+    data->scaled_z = (data->raw_z * 1.0f / 1000.0f) - data->offset_z;
 }
 
 void GYRO_Read(LSM_Data *data)
@@ -581,9 +591,10 @@ void GYRO_Read(LSM_Data *data)
     data->gyro_raw_z = (int16_t)((rx_buf[6] << 8) | rx_buf[5]);
 
     // L3GD20 ±250 dps sensitivity
-    data->gyro_scaled_x = data->gyro_raw_x * 0.00875f;
-    data->gyro_scaled_y = data->gyro_raw_y * 0.00875f;
-    data->gyro_scaled_z = data->gyro_raw_z * 0.00875f;
+    // L3GD20 ±250 dps sensitivity MINUS the offset
+    data->gyro_scaled_x = (data->gyro_raw_x * 0.00875f) - data->gyro_offset_x;
+    data->gyro_scaled_y = (data->gyro_raw_y * 0.00875f) - data->gyro_offset_y;
+    data->gyro_scaled_z = (data->gyro_raw_z * 0.00875f) - data->gyro_offset_z;
 }
 
 int _write(int file, char *ptr, int len)
@@ -604,11 +615,12 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
         // 2. Angle Estimation (Complementary Filter) [cite: 7, 8]
         // Note: You may need to swap Y/Z or X/Z based on exactly how your board is mounted.
-        acc_angle = atan2f(acc_data.scaled_y, acc_data.scaled_z) * (180.0f / 3.14159f);
+        acc_angle = atan2f(acc_data.scaled_y, acc_data.scaled_z) * (180.0f / M_PI);
         
         // Filter: 98% Gyro, 2% Accelerometer [cite: 19]
-        tilt_angle = 0.98f * (tilt_angle + (acc_data.gyro_scaled_x * dt)) + 0.02f * acc_angle;
+        tilt_angle = 0.99f * (tilt_angle + (acc_data.gyro_scaled_x * dt)) + 0.01f * acc_angle;
 
+        HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_2);
         // 3. PID Controller [cite: 161, 182]
         // Note: Pure proportional (P only) is not allowed by the lab manual[cite: 162].
         float error = setpoint - tilt_angle;
