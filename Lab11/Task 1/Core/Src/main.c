@@ -68,20 +68,20 @@ PCD_HandleTypeDef hpcd_USB_FS;
 /* USER CODE BEGIN PV */
 LSM_Data acc_data;
 
-// Control Loop Variables [cite: 206]
+// Control Loop Variables 
 float dt = 0.005f; // 200Hz loop time from your TIM4 setup
 volatile uint8_t display_flag = 0;
 
-// Angle Estimation Variables [cite: 232]
+// Angle Estimation Variables
 float tilt_angle = 0.0f;
 float acc_angle = 0.0f;
 
-// PID Variables [cite: 183]
-float Kp = 1.0f;  // Placeholder gains, you will tune these later [cite: 288]
+// PID Variables 
+float Kp = 1.0f;  // Placeholder gains, you will tune these later
 float Ki = 0.0f;
 float Kd = 0.0f;
 
-float setpoint = 0.0f; // 0 degrees = perfectly upright [cite: 195]
+float setpoint = 0.0f; // 0 degrees = perfectly upright 
 float integral = 0.0f;
 float previous_error = 0.0f;
 float pid_output = 0.0f;
@@ -609,20 +609,20 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     {
         static int counter = 0;
 
-        // 1. Read Sensors [cite: 234]
+        // 1. Read Sensors 
         LSM_Read(&acc_data);
         GYRO_Read(&acc_data);
 
-        // 2. Angle Estimation (Complementary Filter) [cite: 7, 8]
+        // 2. Angle Estimation (Complementary Filter) 
         // Note: You may need to swap Y/Z or X/Z based on exactly how your board is mounted.
         acc_angle = atan2f(acc_data.scaled_y, acc_data.scaled_z) * (180.0f / M_PI);
         
-        // Filter: 98% Gyro, 2% Accelerometer [cite: 19]
+        // Filter: 98% Gyro, 2% Accelerometer 
         tilt_angle = 0.99f * (tilt_angle + (acc_data.gyro_scaled_x * dt)) + 0.01f * acc_angle;
 
         HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_2);
-        // 3. PID Controller [cite: 161, 182]
-        // Note: Pure proportional (P only) is not allowed by the lab manual[cite: 162].
+        // 3. PID Controller 
+        // Note: Pure proportional (P only) is not allowed by the lab manual
         float error = setpoint - tilt_angle;
         
         // Proportional
@@ -639,7 +639,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
         pid_output = P + I + D;
         previous_error = error;
 
-        // 4. Update display flag (Print at 10Hz to avoid flooding UART) [cite: 245, 246]
+        // 4. Update display flag (Print at 10Hz to avoid flooding UART) 
         counter++;
         if (counter >= 100) 
         {
